@@ -1,66 +1,32 @@
 use crate::float::Ordf32;
 use core::ops::{Add, Sub};
 
-/// TODO
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum FeeRateUnit {
-    /// TODO
-    SatPerWu,
-    /// TODO
-    SatPerVb,
-}
-
-impl FeeRateUnit {
-    fn scale_factor_from(&self, rhs: FeeRateUnit) -> f32 {
-        match (self, rhs) {
-            (FeeRateUnit::SatPerVb, FeeRateUnit::SatPerWu) => 4.0,
-            (FeeRateUnit::SatPerWu, FeeRateUnit::SatPerVb) => 0.25,
-            _ => 1.0,
-        }
-    }
-}
-
 /// Fee rate
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 // Internally stored as satoshi/weight unit
-pub struct FeeRate {
-    value: Ordf32,
-    unit: FeeRateUnit,
-}
+pub struct FeeRate(Ordf32);
 
 impl FeeRate {
     /// A feerate of zero
-    pub const ZERO: Self = Self {
-        value: Ordf32(0.0),
-        unit: FeeRateUnit::SatPerWu,
-    };
+    pub const ZERO: Self = Self(Ordf32(0.0));
     /// The default minimum relay fee that bitcoin core uses (1 sat per vbyte). The feerate your transaction has must
     /// be at least this to be forwarded by most nodes on the network.
-    pub const DEFAULT_MIN_RELAY: Self = Self {
-        value: Ordf32(0.25),
-        unit: FeeRateUnit::SatPerWu,
-    };
+    pub const DEFAULT_MIN_RELAY: Self = Self(Ordf32(0.25));
     /// The defualt incremental relay fee that bitcoin core uses (1 sat per vbyte). You must pay
     /// this fee over the fee of the transaction(s) you are replacing by through the replace-by-fee
     /// mechanism. This feerate is applied to the transaction that is replacing the old
     /// transactions.
-    pub const DEFUALT_RBF_INCREMENTAL_RELAY: Self = Self {
-        value: Ordf32(0.25),
-        unit: FeeRateUnit::SatPerWu,
-    };
+    pub const DEFUALT_RBF_INCREMENTAL_RELAY: Self = Self(Ordf32(0.25));
     /// Create a new instance checking the value provided
     ///
     /// ## Panics
     ///
     /// Panics if the value is not [normal](https://doc.rust-lang.org/std/primitive.f32.html#method.is_normal) (except if it's a positive zero) or negative.
-    fn new_checked(value: f32, unit: FeeRateUnit) -> Self {
+    fn new_checked(value: f32) -> Self {
         assert!(value.is_normal() || value == 0.0);
         assert!(value.is_sign_positive());
 
-        Self {
-            value: Ordf32(value),
-            unit,
-        }
+        Self(Ordf32(value))
     }
 
     /// Create a new instance of [`FeeRate`] given a float fee rate in btc/kvbytes
@@ -69,7 +35,7 @@ impl FeeRate {
     ///
     /// Panics if the value is not [normal](https://doc.rust-lang.org/std/primitive.f32.html#method.is_normal) (except if it's a positive zero) or negative.
     pub fn from_btc_per_kvb(btc_per_kvb: f32) -> Self {
-        Self::new_checked(btc_per_kvb * 1e5, FeeRateUnit::SatPerVb)
+        Self::new_checked(btc_per_kvb * 1e5 / 4.0)
     }
 
     /// Create a new instance of [`FeeRate`] given a float fee rate in satoshi/vbyte
@@ -78,16 +44,13 @@ impl FeeRate {
     ///
     /// Panics if the value is not [normal](https://doc.rust-lang.org/std/primitive.f32.html#method.is_normal) (except if it's a positive zero) or negative.
     pub fn from_sat_per_vb(sat_per_vb: f32) -> Self {
-        Self::new_checked(sat_per_vb, FeeRateUnit::SatPerVb)
+        Self::new_checked(sat_per_vb / 4.0)
     }
 
     /// Create a new [`FeeRate`] with the default min relay fee value
     #[deprecated(note = "use the DEFAULT_MIN_RELAY constant instead")]
     pub const fn default_min_relay_fee() -> Self {
-        Self {
-            value: Ordf32(0.25),
-            unit: FeeRateUnit::SatPerWu,
-        }
+        Self(Ordf32(0.25))
     }
 
     /// Calculate fee rate from `fee` and weight units (`wu`).
@@ -97,7 +60,7 @@ impl FeeRate {
 
     /// Calculate feerate from `satoshi/wu`.
     pub fn from_sat_per_wu(sats_per_wu: f32) -> Self {
-        Self::new_checked(sats_per_wu, FeeRateUnit::SatPerWu)
+        Self::new_checked(sats_per_wu)
     }
 
     /// Calculate fee rate from `fee` and `vbytes`.
@@ -106,32 +69,14 @@ impl FeeRate {
         Self::from_sat_per_vb(rate)
     }
 
-    /// Return the value as the given unit.
-    fn as_unit(&self, unit: FeeRateUnit) -> f32 {
-        self.value.0 * unit.scale_factor_from(self.unit)
-    }
-
     /// Return the value as satoshi/vbyte.
     pub fn as_sat_vb(&self) -> f32 {
-        self.as_unit(FeeRateUnit::SatPerVb)
+        self.0 .0 * 4.0
     }
 
     /// Return the value as satoshi/wu.
     pub fn spwu(&self) -> f32 {
-        self.as_unit(FeeRateUnit::SatPerWu)
-    }
-
-    /// Calculate the fee that would be paid for a transaction with the given weight
-    /// at this [`FeeRate`].
-    pub fn implied_fee(&self, weight: f32) -> u64 {
-        let ideal_fee = match self.unit {
-            FeeRateUnit::SatPerVb => {
-                let vb = (weight * 0.25).ceil();
-                vb * self.value.0
-            }
-            FeeRateUnit::SatPerWu => weight * self.value.0,
-        };
-        ideal_fee.ceil() as u64
+        self.0 .0
     }
 }
 
@@ -139,10 +84,7 @@ impl Add<FeeRate> for FeeRate {
     type Output = Self;
 
     fn add(self, rhs: FeeRate) -> Self::Output {
-        Self {
-            value: Ordf32(self.value.0 + rhs.as_unit(self.unit)),
-            unit: self.unit,
-        }
+        Self(Ordf32(self.0 .0 + rhs.0 .0))
     }
 }
 
@@ -150,9 +92,6 @@ impl Sub<FeeRate> for FeeRate {
     type Output = Self;
 
     fn sub(self, rhs: FeeRate) -> Self::Output {
-        Self {
-            value: Ordf32(self.value.0 - rhs.as_unit(self.unit)),
-            unit: self.unit,
-        }
+        Self(Ordf32(self.0 .0 - rhs.0 .0))
     }
 }

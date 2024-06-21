@@ -85,6 +85,8 @@ pub struct TargetFee {
     pub rate: FeeRate,
     /// The fee must enough enough to replace this
     pub replace: Option<Replace>,
+    /// TODO
+    pub use_vb: bool,
 }
 
 impl Default for TargetFee {
@@ -93,6 +95,7 @@ impl Default for TargetFee {
         Self {
             rate: FeeRate::DEFAULT_MIN_RELAY,
             replace: None,
+            use_vb: false,
         }
     }
 }
@@ -102,6 +105,7 @@ impl TargetFee {
     pub const ZERO: Self = TargetFee {
         rate: FeeRate::ZERO,
         replace: None,
+        use_vb: false,
     };
 
     /// Creates a target fee from a feerate. The target won't include a replacement.
@@ -109,7 +113,19 @@ impl TargetFee {
         Self {
             rate: feerate,
             replace: None,
+            use_vb: false,
         }
+    }
+
+    /// TODO
+    pub fn implied_fee(&self, weight: f32) -> u64 {
+        let ideal_fee = if self.use_vb {
+            let vb = (weight * 0.25).ceil();
+            vb * self.rate.as_sat_vb()
+        } else {
+            weight * self.rate.spwu()
+        };
+        ideal_fee.ceil() as u64
     }
 }
 
