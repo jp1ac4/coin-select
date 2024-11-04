@@ -454,7 +454,7 @@ impl<'a> CoinSelector<'a> {
                 value: 0,
             },
         );
-        if excess > change_policy.min_value as i64 {
+        if excess >= change_policy.min_value as i64 {
             debug_assert_eq!(
                 self.is_target_met(target),
                 self.is_target_met_with_drain(
